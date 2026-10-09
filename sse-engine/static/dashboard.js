@@ -61,6 +61,9 @@
     set("nonce_hex", data.nonce_hex);
     set("tag_hex", data.tag_hex);
     set("keyword_count", data.keyword_count.toLocaleString());
+    set("kind_label", data.kind === "pdf"
+      ? `PDF, ${data.pages} page${data.pages === 1 ? "" : "s"}. The original file is encrypted; its text is indexed.`
+      : "Text");
     set("blind_fields", data.blind_fields.length ? `+ blind index: ${data.blind_fields.join(", ")}` : "");
     showPreview();
     delete preview.dataset.state;
@@ -320,7 +323,18 @@
       h(
         "div",
         { class: "plain-wrap stack" },
-        h("div", { class: "result-title" }, icon("file"), h("span", {}, doc.filename), ...badges, doc.truncated ? h("span", { class: "badge badge-warn" }, "truncated") : null),
+        h(
+          "div",
+          { class: "result-title" },
+          icon("file"),
+          h("span", {}, doc.filename),
+          doc.kind === "pdf" ? h("span", { class: "badge badge-sealed" }, `PDF · ${doc.pages} page${doc.pages === 1 ? "" : "s"}`) : null,
+          ...badges,
+          doc.truncated ? h("span", { class: "badge badge-warn" }, "truncated") : null,
+          h("a", { class: "btn btn-ghost btn-sm download-link", href: `/documents/${encodeURIComponent(result.dataset.doc)}/download` },
+            icon("download"), h("span", {}, doc.kind === "pdf" ? "Download PDF" : "Download")),
+        ),
+        doc.kind === "pdf" ? h("p", { class: "muted small" }, "Text extracted from the PDF. Download to see the original layout.") : null,
         renderPlaintext(doc.text, highlightTerms(lastQuery)),
       ),
     );

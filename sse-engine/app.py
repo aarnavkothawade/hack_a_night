@@ -4,6 +4,7 @@ Run:  python app.py        (serves http://localhost:5000)
 """
 from __future__ import annotations
 
+import io
 import json
 import logging
 import os
@@ -21,6 +22,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_file,
     session,
     url_for,
 )
@@ -226,6 +228,15 @@ def create_app(base_dir: str | os.PathLike | None = None) -> Flask:
         if not DOC_ID_RE.fullmatch(doc_id):
             abort(404)
         return jsonify(vault.verify(doc_id))
+
+    @app.get("/documents/<doc_id>/download")
+    def download(doc_id: str):
+        """Decrypt and return the original file (the PDF itself for PDFs)."""
+        if not DOC_ID_RE.fullmatch(doc_id):
+            abort(404)
+        data, filename, mimetype = vault.original_file(doc_id)
+        return send_file(io.BytesIO(data), mimetype=mimetype, as_attachment=True, download_name=filename,
+                         max_age=0)
 
     # --- setup --------------------------------------------------------------------------------
 

@@ -1,6 +1,6 @@
 # Verifiable Searchable Symmetric Encryption (SSE) Engine
 
-A Flask portal that encrypts text documents before they reach third-party storage
+A Flask portal that encrypts text and PDF documents before they reach third-party storage
 (local folder by default, Google Drive optionally) and still supports keyword and
 boolean search (`AND`, `OR`, `NOT`, parentheses). The storage provider and anyone
 with access to it see only ciphertext, keyed-hash index labels, sizes and the
@@ -11,6 +11,7 @@ access pattern. They never see plaintext, keywords or keys.
 ```
 sse-engine/
 ├── app.py               Flask routes, CSRF, CSP, error reporting, OAuth hand-off
+├── document_reader.py Reads uploads: UTF-8 text, or PDF text via pypdf
 ├── vault.py             Service layer: staging, upload, search, verify, server view
 ├── crypto_engine.py     Keys, HKDF, AES-256-GCM, trapdoors, labels, blind index
 ├── sse_index.py         Encrypted inverted index, normalization, boolean evaluation
@@ -62,7 +63,7 @@ To keep runtime state elsewhere, set `SSE_HOME=/path/to/dir`.
 pytest
 ```
 
-The suite (109 tests) covers:
+The suite (123 tests) covers:
 
 - AES-GCM round trip, tampered blob, wrong document-ID AAD, wrong key
 - trapdoor determinism and distinctness
@@ -73,6 +74,16 @@ The suite (109 tests) covers:
 - index files, the manifest and blobs on disk contain no corpus keyword
 - setup validation, secret masking, CSRF, security headers
 - OAuth never starts on import or page load
+
+## PDF support
+
+A file starting with `%PDF-` is treated as a PDF. The portal extracts its text
+layer with `pypdf` for indexing, then encrypts the **original PDF bytes** as the
+blob, so the exact file can be downloaded again. On decrypt, the text is extracted
+again from the decrypted PDF and shown with your search terms highlighted; the
+**Download PDF** button returns the original. The PDF type and page count are
+stored only inside the encrypted metadata. `pypdf` is the one dependency added
+beyond the original list, with your approval.
 
 ## Cryptographic design
 
@@ -119,6 +130,7 @@ blind-index fields.
 | `POST /preview` | Encrypt and stage a file in memory and return the preview. Plaintext is never returned |
 | `POST /upload` | Commit a staged preview (`{"staging_id"}`) or encrypt a file in one shot. Returns `doc_id` |
 | `GET /search?q=…[&decrypt=1\|<id,…>]` | Boolean search returns IDs. Decrypts only when `decrypt` is given |
+| `GET /documents/<doc_id>/download` | Decrypt and download the original file (the PDF itself for PDFs) |
 | `GET /verify/<doc_id>` | Integrity and index checks, returns `pass` or `fail` |
 | `GET /server-view[?format=json]` | Blob IDs, sizes, first 16 hex, blind tokens, index labels, audit log. No plaintext |
 | `GET/POST /setup` | Storage choice, credentials.json upload or paste, optional API key. Everything is validated before saving |
@@ -162,7 +174,9 @@ browser that asked for it, with `Cache-Control: no-store`.
 - **Index location.** `search_index.json` lives next to the portal for the demo.
   It contains only labels and ciphertexts, so it could be hosted by the server.
   Search would then be one round trip per term.
-- **Text only.** UTF-8 documents up to 5 MB.
+- **Text and PDF only.** UTF-8 text or PDF, up to 5 MB. PDFs need a text layer:
+  scanned PDFs are rejected because there is no OCR. Password-protected PDFs are
+  rejected too.
 
 ## Switching to Google Drive
 

@@ -471,6 +471,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .result-meta .icon { width: 12px; height: 12px; }
 .result-actions { display: flex; gap: 6px; }
 .result-body { border-top: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.icon.flip { transform: rotate(180deg); }
+.download-link { margin-left: auto; }
 .result-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-weight: 600; font-size: 13.5px; }
 .plaintext {
   margin: 0; max-height: 280px; overflow: auto; padding: 12px; border-radius: var(--r-sm);

@@ -35,7 +35,7 @@
       <span class="step" aria-hidden="true">1</span>
       <div>
         <h2 id="encrypt-title">Encrypt a document</h2>
-        <p>UTF-8 text, up to 5 MB. Encrypted with AES-256-GCM using the document ID as associated data.</p>
+        <p>UTF-8 text or PDF, up to 5 MB. Encrypted with AES-256-GCM using the document ID as associated data.</p>
       </div>
     </header>
 
@@ -58,10 +58,10 @@
 
       <label class="dropzone" id="dropzone">
         <input type="file" id="file-input" name="file" class="visually-hidden"
-               accept=".txt,.md,.csv,.json,.log,.xml,.html,.yaml,.yml,text/*">
+               accept=".pdf,.txt,.md,.csv,.json,.log,.xml,.html,.yaml,.yml,application/pdf,text/*">
         <span class="dropzone-icon">{{ icon('upload') }}</span>
-        <span class="dropzone-title"><strong>Choose a text file</strong> or drop it here</span>
-        <span class="dropzone-sub">.txt .md .csv .json .log · try the files in <code>samples/</code></span>
+        <span class="dropzone-title"><strong>Choose a file</strong> or drop it here</span>
+        <span class="dropzone-sub">.pdf .txt .md .csv .json .log · try the files in <code>samples/</code></span>
       </label>
       <p class="hint">{{ icon('info') }}Fields are stored as exact-match blind-index tokens. Search them with <code>department:finance</code>.</p>
     </form>
@@ -74,6 +74,7 @@
       </div>
       <dl class="kv">
         <div><dt>Document ID</dt><dd class="mono" data-field="doc_id"></dd></div>
+        <div><dt>Type</dt><dd data-field="kind_label"></dd></div>
         <div><dt>Blob size</dt><dd><span data-field="blob_size"></span> bytes <span class="muted">nonce ‖ ciphertext ‖ tag</span></dd></div>
         <div><dt>Nonce</dt><dd class="mono hex" data-field="nonce_hex"></dd></div>
         <div><dt>Ciphertext</dt><dd class="mono hex cipher" data-field="ciphertext_head"></dd></div>
@@ -177,5 +178,6 @@
   <span data-icon="alert">{{ icon('alert') }}</span>
   <span data-icon="copy">{{ icon('copy') }}</span>
   <span data-icon="file">{{ icon('file') }}</span>
+  <span data-icon="download">{{ icon('upload', 'flip') }}</span>
 </template>
 {% endblock %}

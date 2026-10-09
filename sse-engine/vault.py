@@ -18,6 +18,7 @@ from pathlib import Path
 import crypto_engine as ce
 from audit_logger import AuditLogger
 from config_manager import ConfigManager
+from document_reader import DocumentError, read_document, text_from_stored
 from drive_client import DriveAuth, DriveNotConnected, DriveStorage
 from local_storage import LocalStorage
 from sse_index import (
@@ -131,16 +132,16 @@ class Vault:
         if len(data) > MAX_DOCUMENT_BYTES:
             raise VaultError("the file is larger than 5 MB", 413)
         try:
-            text = data.decode("utf-8-sig")
-        except UnicodeDecodeError:
-            raise VaultError("only UTF-8 text documents are supported") from None
+            doc = read_document(data)
+        except DocumentError as exc:
+            raise VaultError(str(exc)) from None
         filename = (filename or "untitled.txt").replace("\\", "/").rsplit("/", 1)[-1][:MAX_FILENAME_LEN]
         clean = self._clean_fields(fields)
-        tokens = tokenize(text)
+        tokens = tokenize(doc.text)
 
         doc_id = ce.new_doc_id()
-        blob = ce.encrypt(self.keys.enc, text.encode("utf-8"), ce.doc_aad(doc_id))
-        meta = {"filename": filename, "fields": clean, "chars": len(text)}
+        blob = ce.encrypt(self.keys.enc, doc.stored, ce.doc_aad(doc_id))
+        meta = {"filename": filename, "fields": clean, "chars": len(doc.text), "kind": doc.kind, "pages": doc.pages}
         meta_blob = ce.encrypt(self.keys.enc, json.dumps(meta).encode(), ce.meta_aad(doc_id))
         blind = {
             name: ce.blind_index(self.keys.blind, name, normalize_field_value(value)).hex()
@@ -163,6 +164,8 @@ class Vault:
             "ciphertext_head": ciphertext.hex()[:64],
             "tag_hex": tag.hex(),
             "keyword_count": len(tokens),
+            "kind": doc.kind,
+            "pages": doc.pages,
             "blind_fields": sorted(blind),
             "expires_in": STAGING_TTL_SECONDS,
         }
@@ -278,27 +281,51 @@ class Vault:
             "uploaded_at": rec["uploaded_at"],
         }
 
-    def decrypt_document(self, doc_id: str, *, audit: bool = True) -> dict:
+    def _open(self, doc_id: str) -> tuple[bytes, dict]:
+        """Download and decrypt a document. Returns (stored plaintext bytes, metadata)."""
         rec = self._record(doc_id)
+        blob = self.provider_for(rec["provider"]).download_bytes(rec["file_id"])
+        stored = ce.decrypt(self.keys.enc, blob, ce.doc_aad(doc_id))
+        meta = json.loads(ce.decrypt(self.keys.enc, bytes.fromhex(rec["meta"]), ce.meta_aad(doc_id)))
+        meta.setdefault("kind", "text")  # documents stored before PDF support
+        return stored, meta
+
+    def decrypt_document(self, doc_id: str, *, audit: bool = True) -> dict:
         try:
-            blob = self.provider_for(rec["provider"]).download_bytes(rec["file_id"])
-            text = ce.decrypt(self.keys.enc, blob, ce.doc_aad(doc_id)).decode("utf-8")
-            meta = json.loads(ce.decrypt(self.keys.enc, bytes.fromhex(rec["meta"]), ce.meta_aad(doc_id)))
+            stored, meta = self._open(doc_id)
+            text = text_from_stored(meta["kind"], stored)
         except ce.IntegrityError:
             if audit:
                 self.audit.log("decrypt", status="fail", blob_ids=[doc_id])
             return {"ok": False, "error": "integrity check failed: the blob was modified or swapped"}
         except StorageError as exc:
             return {"ok": False, "error": f"storage failed: {exc}"}
+        except DocumentError as exc:
+            return {"ok": False, "error": str(exc)}
         if audit:
             self.audit.log("decrypt", blob_ids=[doc_id], result_count=1)
         return {
             "ok": True,
             "filename": meta["filename"],
             "fields": meta["fields"],
+            "kind": meta["kind"],
+            "pages": meta.get("pages"),
             "text": text[:MAX_DECRYPTED_CHARS],
             "truncated": len(text) > MAX_DECRYPTED_CHARS,
         }
+
+    def original_file(self, doc_id: str) -> tuple[bytes, str, str]:
+        """Decrypt the stored file for download. Returns (bytes, filename, mimetype)."""
+        try:
+            stored, meta = self._open(doc_id)
+        except ce.IntegrityError:
+            self.audit.log("decrypt", status="fail", blob_ids=[doc_id])
+            raise VaultError("integrity check failed: the blob was modified or swapped", 422) from None
+        except StorageError as exc:
+            raise VaultError(f"storage failed: {exc}", 502) from None
+        self.audit.log("decrypt", blob_ids=[doc_id], result_count=1)
+        mimetype = "application/pdf" if meta["kind"] == "pdf" else "text/plain; charset=utf-8"
+        return stored, meta["filename"], mimetype
 
     def _record(self, doc_id: str) -> dict:
         rec = self.manifest.get(doc_id)
@@ -323,11 +350,11 @@ class Vault:
         except (StorageError, VaultError) as exc:
             check("blob_present", False, str(exc))
 
-        text = None
+        stored = None
         if blob is not None:
             check("blob_size", len(blob) == rec["blob_size"], f"expected {rec['blob_size']}, got {len(blob)}")
             try:
-                text = ce.decrypt(self.keys.enc, blob, ce.doc_aad(doc_id)).decode("utf-8")
+                stored = ce.decrypt(self.keys.enc, blob, ce.doc_aad(doc_id))
                 check("gcm_tag", True, "AES-256-GCM tag valid with document ID as AAD")
             except ce.IntegrityError:
                 check("gcm_tag", False, "tag mismatch: blob was modified, truncated or swapped")
@@ -335,9 +362,17 @@ class Vault:
         meta = None
         try:
             meta = json.loads(ce.decrypt(self.keys.enc, bytes.fromhex(rec["meta"]), ce.meta_aad(doc_id)))
+            meta.setdefault("kind", "text")
             check("metadata_tag", True, "encrypted metadata authenticates")
         except (ce.IntegrityError, ValueError):
             check("metadata_tag", False, "metadata ciphertext failed authentication")
+
+        text = None
+        if stored is not None and meta is not None:
+            try:
+                text = text_from_stored(meta["kind"], stored)
+            except (DocumentError, UnicodeDecodeError):
+                check("content", False, "decrypted content could not be read")
 
         if text is not None:
             stats = self.index.verify_document(doc_id, tokenize(text))
