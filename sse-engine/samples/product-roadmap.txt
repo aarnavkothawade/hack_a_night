@@ -1,0 +1,6 @@
+Product roadmap draft, 2027 planning
+
+Theme 1: offline mode for the mobile app, with encrypted local sync.
+Theme 2: enterprise SSO and audit exports for regulated customers.
+Theme 3: pricing experiment for the starter tier; budget pending finance approval.
+This draft is not final and must not be shared with partners.

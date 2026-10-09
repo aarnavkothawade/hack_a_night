@@ -1,0 +1,6 @@
+Vendor contract summary: Contoso Cloud Services
+
+Term: 36 months with an annual price escalator capped at 4 percent.
+Data residency: EU only. Breach notification within 72 hours.
+Termination for convenience requires 90 days notice and a fee equal to one quarter.
+Procurement recommends renewal; legal review of the indemnity clause is still open.

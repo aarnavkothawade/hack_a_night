@@ -1,0 +1,16 @@
+# Secrets and runtime state - never commit
+credentials.json
+token.json
+.env
+master.key
+search_index.json
+index_state.bin
+documents.json
+local_store/
+audit.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/

@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Setup{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='setup.js') }}" defer></script>{% endblock %}
+{% block content %}
+<section class="hero hero-compact">
+  <div class="hero-copy">
+    <p class="eyebrow"><span class="eyebrow-dot trusted"></span>Configuration</p>
+    <h1>Setup</h1>
+    <p class="lede">Choose where ciphertext is stored and connect Google Drive. Settings are written to <code>.env</code> and <code>credentials.json</code> next to the portal, both git-ignored.</p>
+  </div>
+</section>
+
+<div class="callout callout-warn" role="note">
+  {{ icon('alert') }}
+  <p><strong>Local demo only.</strong> Pasting secrets into a web page is for local demos. In production, provision OAuth clients and API keys through a secrets manager or environment variables, never through a browser form. Saved secrets are shown only as their last 4 characters.</p>
+</div>
+
+<div class="setup-layout">
+  <form method="post" action="{{ url_for('save_setup') }}" enctype="multipart/form-data" class="stack-lg" id="setup-form" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <section class="card" aria-labelledby="storage-title">
+      <header class="card-head"><div><h2 id="storage-title">Storage provider</h2><p>Where encrypted blobs are written. Existing documents stay readable from the provider they were saved to.</p></div></header>
+      <div class="radio-cards" role="radiogroup" aria-labelledby="storage-title">
+        <label class="radio-card">
+          <input type="radio" name="storage" value="local" {% if config.storage == 'local' %}checked{% endif %}>
+          <span class="radio-card-body">
+            <span class="radio-card-icon">{{ icon('folder') }}</span>
+            <span><strong>Local storage</strong><span class="badge badge-neutral">Default</span><br>
+            <span class="muted">Blobs in <code>./local_store/</code>. No account needed.</span></span>
+          </span>
+        </label>
+        <label class="radio-card">
+          <input type="radio" name="storage" value="drive" {% if config.storage == 'drive' %}checked{% endif %}>
+          <span class="radio-card-body">
+            <span class="radio-card-icon">{{ icon('cloud') }}</span>
+            <span><strong>Google Drive</strong>
+              {% if storage.drive_connected %}<span class="badge badge-sealed">Connected</span>{% else %}<span class="badge badge-warn">Not connected</span>{% endif %}<br>
+            <span class="muted">Blobs in an “SSE Engine Vault” folder, <code>drive.file</code> scope only.</span></span>
+          </span>
+        </label>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="creds-title">
+      <header class="card-head"><div><h2 id="creds-title">Google OAuth client</h2><p>Needed for Google Drive. Must contain <code>client_id</code>, <code>client_secret</code> and <code>redirect_uris</code>.</p></div></header>
+      {% set creds = config.credentials %}
+      {% if creds and creds.valid %}
+      <dl class="kv kv-compact">
+        <div><dt>Status</dt><dd><span class="badge badge-sealed">{{ icon('check') }}Valid</span> <span class="muted">{{ creds.type }} client · {{ creds.redirect_uri_count }} redirect URI{{ '' if creds.redirect_uri_count == 1 else 's' }}</span></dd></div>
+        <div><dt>Client ID</dt><dd class="mono">{{ creds.client_id }}</dd></div>
+        <div><dt>Client secret</dt><dd class="mono">{{ creds.client_secret }}</dd></div>
+      </dl>
+      {% elif creds %}
+      <div class="callout callout-danger">{{ icon('alert') }}<p>The saved credentials.json is invalid: {{ creds.error }}. Upload a new one.</p></div>
+      {% endif %}
+
+      <div class="field">
+        <span class="field-label">Redirect URI to register in Google Cloud Console</span>
+        <div class="copy-field"><code id="redirect-uri">{{ redirect_uri }}</code><button type="button" class="icon-btn" data-copy="#redirect-uri" aria-label="Copy redirect URI" title="Copy">{{ icon('copy') }}</button></div>
+      </div>
+
+      <div class="field-row field-row-wide">
+        <label class="field">
+          <span class="field-label">Upload credentials.json</span>
+          <span class="file-input">
+            <input type="file" name="credentials_file" id="credentials-file" accept=".json,application/json">
+            <span class="file-input-face">{{ icon('upload') }}<span id="credentials-file-name">Choose file…</span></span>
+          </span>
+        </label>
+        <label class="field">
+          <span class="field-label">…or paste the JSON</span>
+          <textarea name="credentials_json" id="credentials-json" rows="5" spellcheck="false" autocomplete="off"
+                    placeholder='{"web": {"client_id": "…", "client_secret": "…", "redirect_uris": ["…"]}}'></textarea>
+          <span class="field-status" id="credentials-status" aria-live="polite"></span>
+        </label>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="apikey-title">
+      <header class="card-head"><div><h2 id="apikey-title">Google API key <em class="optional">optional</em></h2><p>Attached to Drive API calls for quota attribution. Not required: OAuth alone is enough.</p></div></header>
+      <div class="field-row field-row-wide">
+        <label class="field">
+          <span class="field-label">API key</span>
+          <span class="password">
+            <input type="password" name="api_key" id="api-key" autocomplete="new-password" spellcheck="false"
+                   placeholder="{{ 'Saved: ' ~ config.api_key if config.api_key else 'AIza…' }}">
+            <button type="button" class="icon-btn" data-reveal="#api-key" aria-label="Show key" title="Show key">{{ icon('eye') }}</button>
+          </span>
+          <span class="field-status">{% if config.api_key %}Saved key ends in <span class="mono">{{ config.api_key[-4:] }}</span>. Leave blank to keep it.{% else %}No key saved.{% endif %}</span>
+        </label>
+        {% if config.api_key %}
+        <label class="checkbox"><input type="checkbox" name="clear_api_key" value="1"><span>Remove the saved key</span></label>
+        {% endif %}
+      </div>
+    </section>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">{{ icon('shield') }}<span>Validate &amp; save</span></button>
+      <span class="muted small">Everything is validated before anything is written.</span>
+    </div>
+  </form>
+
+  <aside class="stack-lg">
+    <section class="card" aria-labelledby="drive-title">
+      <header class="card-head"><div><h2 id="drive-title">Google Drive connection</h2><p>Sign-in opens Google’s consent screen. It never runs on import or page load.</p></div></header>
+      {% if storage.drive_connected %}
+        <div class="conn conn-ok">{{ icon('check') }}<div><strong>Connected</strong><span class="muted">token.json is present.</span></div></div>
+        <form method="post" action="{{ url_for('drive_disconnect') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-danger-ghost">{{ icon('x') }}<span>Disconnect</span></button>
+        </form>
+      {% elif storage.has_credentials %}
+        <div class="conn">{{ icon('cloud') }}<div><strong>Not connected</strong><span class="muted">Ready to sign in.</span></div></div>
+        <form method="post" action="{{ url_for('drive_connect') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-primary">{{ icon('link') }}<span>Connect Google Drive</span></button>
+        </form>
+      {% else %}
+        <div class="conn">{{ icon('cloud') }}<div><strong>Not connected</strong><span class="muted">Add an OAuth client first.</span></div></div>
+        <button type="button" class="btn" disabled>{{ icon('link') }}<span>Connect Google Drive</span></button>
+      {% endif %}
+    </section>
+
+    <section class="card" aria-labelledby="steps-title">
+      <header class="card-head"><div><h2 id="steps-title">Drive in four steps</h2></div></header>
+      <ol class="steps">
+        <li>In Google Cloud Console, enable the <strong>Google Drive API</strong>.</li>
+        <li>Create an <strong>OAuth client ID</strong> of type <em>Web application</em> and add the redirect URI shown here.</li>
+        <li>Download the client JSON and upload it here, then select Google Drive.</li>
+        <li>Click <strong>Connect Google Drive</strong> and approve the <code>drive.file</code> scope.</li>
+      </ol>
+    </section>
+  </aside>
+</div>
+{% endblock %}

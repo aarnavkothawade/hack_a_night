@@ -1,0 +1,58 @@
+{% from "_icons.html" import icon %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>{% block title %}{% endblock %} · SSE Engine</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="{{ url_for('static', filename='core.js') }}" defer></script>
+  {% block scripts %}{% endblock %}
+</head>
+<body data-page="{{ page or 'error' }}">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="{{ url_for('dashboard') }}" aria-label="SSE Engine home">
+        <span class="brand-mark">{{ icon('logo') }}</span>
+        <span class="brand-name">SSE Engine</span>
+        <span class="brand-tag">verifiable searchable encryption</span>
+      </a>
+      <nav class="nav" aria-label="Main">
+        <a href="{{ url_for('dashboard') }}" {% if page == 'dashboard' %}aria-current="page"{% endif %}>{{ icon('lock') }}<span>Vault</span></a>
+        <a href="{{ url_for('server_view') }}" {% if page == 'server-view' %}aria-current="page"{% endif %}>{{ icon('server') }}<span>Server view</span></a>
+        <a href="{{ url_for('setup') }}" {% if page == 'setup' %}aria-current="page"{% endif %}>{{ icon('sliders') }}<span>Setup</span></a>
+      </nav>
+      <a class="storage-pill" href="{{ url_for('setup') }}" data-ready="{{ 'true' if storage.ready else 'false' }}"
+         title="{{ 'Storage ready' if storage.ready else 'Google Drive selected but not connected' }}">
+        <span class="dot" aria-hidden="true"></span>
+        {{ icon('folder' if storage.choice == 'local' else 'cloud') }}
+        <span>{{ storage.label }}{% if storage.choice == 'drive' and not storage.drive_connected %} · not connected{% endif %}</span>
+      </a>
+    </div>
+  </header>
+
+  <main id="main" class="page">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+      <div class="flashes">
+        {% for category, message in messages %}
+        <div class="callout {{ 'callout-danger' if category == 'error' else 'callout-success' }}" role="{{ 'alert' if category == 'error' else 'status' }}">
+          {{ icon('alert' if category == 'error' else 'check') }}<p>{{ message }}</p>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <span>AES-256-GCM · HMAC-SHA256 · HKDF-SHA256</span>
+    <span>Keys never leave this portal</span>
+  </footer>
+  <div class="toaster" id="toaster" aria-live="polite" aria-relevant="additions"></div>
+</body>
+</html>

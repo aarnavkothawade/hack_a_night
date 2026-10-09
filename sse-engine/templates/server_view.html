@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Server view{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='server-view.js') }}" defer></script>{% endblock %}
+{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow"><span class="eyebrow-dot untrusted"></span>Server · untrusted zone</p>
+    <h1>What the server sees</h1>
+    <p class="lede">This page shows what the storage provider and index host hold: random IDs, sizes, ciphertext, keyed-hash labels and the audit trail. There is no plaintext, no keywords and no keys here.</p>
+  </div>
+  <div class="leak-check" data-leak-ignore>
+    <label class="field">
+      <span class="field-label">{{ icon('radar') }}Leak check</span>
+      <span class="search-box search-box-sm">
+        <input id="leak-input" type="text" autocomplete="off" spellcheck="false" placeholder="Type a word from your documents">
+      </span>
+    </label>
+    <p id="leak-result" class="leak-result" aria-live="polite">Runs only in your browser and greps this page’s text.</p>
+  </div>
+</section>
+
+<nav class="subnav" aria-label="Sections">
+  <a href="#blobs">Encrypted blobs <span class="count">{{ view.blobs | length }}</span></a>
+  <a href="#labels">Index labels <span class="count">{{ view.labels | length }}</span></a>
+  <a href="#audit">Audit log <span class="count">{{ view.audit | length }}</span></a>
+  <a href="#leakage">Leakage profile</a>
+</nav>
+
+<section class="card" id="blobs" aria-labelledby="blobs-title">
+  <header class="card-head card-head-row">
+    <div>
+      <h2 id="blobs-title">Encrypted blobs</h2>
+      <p>Each blob is <code>nonce ‖ ciphertext ‖ tag</code>. Sizes leak approximate document length.</p>
+    </div>
+  </header>
+  {% if view.blobs %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th scope="col">Blob ID</th><th scope="col">Provider</th><th scope="col" class="num">Size</th><th scope="col">First 16 hex</th><th scope="col">Blind-index tokens</th><th scope="col">Stored</th></tr></thead>
+      <tbody>
+        {% for b in view.blobs %}
+        <tr>
+          <td><span class="mono id">{{ b.blob_id }}</span></td>
+          <td><span class="provider">{{ icon('folder' if b.provider == 'local' else 'cloud') }}{{ b.provider }}</span></td>
+          <td class="num">{{ b.size }} B</td>
+          <td><span class="mono hex">{{ b.head }}</span><span class="muted">…</span></td>
+          <td>
+            {% for name, token in b.blind | dictsort %}
+              <span class="token" title="{{ token }}"><span class="token-k">{{ name[:4] }}</span><span class="mono">{{ token[:12] }}…</span></span>
+            {% else %}<span class="muted">none</span>{% endfor %}
+          </td>
+          <td><time datetime="{{ b.uploaded_at }}">{{ b.uploaded_at | when }}</time></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty"><div class="empty-icon">{{ icon('server') }}</div><p class="muted">No blobs stored yet.</p></div>
+  {% endif %}
+</section>
+
+<section class="card" id="labels" aria-labelledby="labels-title">
+  <header class="card-head card-head-row">
+    <div>
+      <h2 id="labels-title">Index labels</h2>
+      <p><code>L = HMAC(K_idx, T ‖ counter)</code>. Labels are sorted, so file order reveals nothing; encrypted postings are not shown.</p>
+    </div>
+    {% if view.labels | length > 120 %}
+    <button type="button" class="btn btn-ghost btn-sm" id="labels-toggle" aria-expanded="false" aria-controls="label-grid">Show all {{ view.labels | length }}</button>
+    {% endif %}
+  </header>
+  {% if view.labels %}
+  <div class="label-grid {% if view.labels | length > 120 %}is-collapsed{% endif %}" id="label-grid">
+    {% for label in view.labels %}<code title="{{ label }}">{{ label }}</code>{% endfor %}
+  </div>
+  {% else %}
+  <div class="empty"><div class="empty-icon">{{ icon('key') }}</div><p class="muted">The index is empty.</p></div>
+  {% endif %}
+</section>
+
+<section class="card" id="audit" aria-labelledby="audit-title">
+  <header class="card-head card-head-row">
+    <div>
+      <h2 id="audit-title">Audit log</h2>
+      <p>Newest first, last {{ view.audit | length }} entries of <code>audit.log</code>. Labels appear only as SHA-256 fingerprints.</p>
+    </div>
+  </header>
+  {% if view.audit %}
+  <div class="table-wrap">
+    <table class="table table-audit">
+      <thead><tr><th scope="col">Time</th><th scope="col">Operation</th><th scope="col">Status</th><th scope="col">Blob IDs</th><th scope="col">Label hashes</th><th scope="col" class="num">Results</th></tr></thead>
+      <tbody>
+        {% for e in view.audit %}
+        <tr>
+          <td><time datetime="{{ e.ts }}">{{ e.ts | when }}</time></td>
+          <td><span class="op op-{{ e.op }}">{{ e.op | replace('_', ' ') }}</span></td>
+          <td><span class="status status-{{ e.status }}">{{ e.status }}</span></td>
+          <td>
+            {% for bid in (e.blob_ids or [])[:2] %}<span class="mono id-sm">{{ bid[:10] }}…</span>{% endfor %}
+            {% if (e.blob_ids or []) | length > 2 %}<span class="muted">+{{ (e.blob_ids | length) - 2 }}</span>{% endif %}
+            {% if not e.blob_ids %}<span class="muted">—</span>{% endif %}
+          </td>
+          <td>
+            {% for h in (e.label_hashes or [])[:2] %}<span class="mono id-sm">{{ h }}</span>{% endfor %}
+            {% if (e.label_count or 0) > 2 %}<span class="muted">+{{ e.label_count - 2 }}</span>{% endif %}
+            {% if not e.label_count %}<span class="muted">—</span>{% endif %}
+          </td>
+          <td class="num">{{ e.result_count if e.result_count is not none else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty"><div class="empty-icon">{{ icon('file') }}</div><p class="muted">No operations logged yet.</p></div>
+  {% endif %}
+</section>
+
+<section class="card" id="leakage" aria-labelledby="leakage-title">
+  <header class="card-head"><div><h2 id="leakage-title">Leakage profile</h2><p>What an honest-but-curious server can and cannot learn from everything above.</p></div></header>
+  <div class="leak-cols">
+    <div class="leak-col leak-learns">
+      <h3>{{ icon('eye') }}Learns</h3>
+      <ul>
+        <li><strong>Access pattern:</strong> which document IDs match a query and which blobs are downloaded.</li>
+        <li><strong>Search pattern:</strong> whether two queries repeat a term, because equal words give equal labels.</li>
+        <li><strong>Result counts:</strong> how many postings each term has and how many terms a query uses.</li>
+        <li><strong>Sizes &amp; timing:</strong> blob sizes, upload times, number of unique keywords per upload.</li>
+        <li><strong>Blind-index equality:</strong> which documents share the same department or classification value.</li>
+      </ul>
+    </div>
+    <div class="leak-col leak-hidden">
+      <h3>{{ icon('eye-off') }}Cannot learn</h3>
+      <ul>
+        <li>Document contents or filenames, which are AES-256-GCM encrypted.</li>
+        <li>Plaintext keywords or query text, which only ever arrive as HMAC outputs.</li>
+        <li>Boolean structure: AND, OR and NOT are evaluated inside the portal.</li>
+        <li>Keys: <code>master.key</code>, <code>K_enc</code>, <code>K_idx</code>, <code>K_tok</code> and <code>K_blind</code> never leave the portal.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+{% endblock %}

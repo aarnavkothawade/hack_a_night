@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Vault{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='dashboard.js') }}" defer></script>{% endblock %}
+{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow"><span class="eyebrow-dot trusted"></span>Portal · trusted zone</p>
+    <h1>Encrypted vault</h1>
+    <p class="lede">Files are encrypted here before they leave. {{ storage.label }} only ever receives ciphertext, and searches use keyed hashes, never the words themselves.</p>
+  </div>
+  <dl class="stats" aria-label="Vault statistics">
+    <div class="stat"><dt>Documents</dt><dd id="stat-documents">{{ stats.documents }}</dd></div>
+    <div class="stat"><dt>Index postings</dt><dd id="stat-postings">{{ stats.postings }}</dd></div>
+    <div class="stat"><dt>Ciphertext stored</dt><dd id="stat-bytes" data-bytes="{{ stats.stored_bytes }}">{{ stats.stored_bytes | filesize }}</dd></div>
+  </dl>
+</section>
+
+<div class="boundary" aria-label="Trust boundary">
+  <div class="zone zone-trusted">
+    {{ icon('key') }}
+    <div><strong>Portal sees</strong><span>plaintext while encrypting · master.key · trapdoors</span></div>
+  </div>
+  <div class="boundary-line" aria-hidden="true"><span>trust boundary</span></div>
+  <div class="zone zone-untrusted">
+    {{ icon('server') }}
+    <div><strong>Server sees</strong><span>ciphertext · index labels · sizes · access pattern</span></div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <!-- 1. Encrypt ------------------------------------------------------------>
+  <section class="card" id="encrypt-card" aria-labelledby="encrypt-title">
+    <header class="card-head">
+      <span class="step" aria-hidden="true">1</span>
+      <div>
+        <h2 id="encrypt-title">Encrypt a document</h2>
+        <p>UTF-8 text, up to 5 MB. Encrypted with AES-256-GCM using the document ID as associated data.</p>
+      </div>
+    </header>
+
+    <form id="upload-form" class="stack" novalidate>
+      <div class="field-row">
+        <label class="field">
+          <span class="field-label">Department <em>optional</em></span>
+          <input name="department" maxlength="64" placeholder="e.g. Finance" autocomplete="off" spellcheck="false">
+        </label>
+        <label class="field">
+          <span class="field-label">Classification <em>optional</em></span>
+          <span class="select">
+            <select name="classification">
+              <option value="">None</option>
+              {% for c in classifications %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+            </select>
+          </span>
+        </label>
+      </div>
+
+      <label class="dropzone" id="dropzone">
+        <input type="file" id="file-input" name="file" class="visually-hidden"
+               accept=".txt,.md,.csv,.json,.log,.xml,.html,.yaml,.yml,text/*">
+        <span class="dropzone-icon">{{ icon('upload') }}</span>
+        <span class="dropzone-title"><strong>Choose a text file</strong> or drop it here</span>
+        <span class="dropzone-sub">.txt .md .csv .json .log · try the files in <code>samples/</code></span>
+      </label>
+      <p class="hint">{{ icon('info') }}Fields are stored as exact-match blind-index tokens. Search them with <code>department:finance</code>.</p>
+    </form>
+
+    <div id="preview" class="preview" hidden aria-live="polite">
+      <div class="preview-head">
+        <span class="badge badge-sealed">{{ icon('lock') }}Sealed</span>
+        <span class="file-chip" title="Filename is encrypted with the metadata">{{ icon('file') }}<span id="preview-filename"></span></span>
+        <button type="button" class="icon-btn" id="discard-btn" aria-label="Discard preview" title="Discard">{{ icon('x') }}</button>
+      </div>
+      <dl class="kv">
+        <div><dt>Document ID</dt><dd class="mono" data-field="doc_id"></dd></div>
+        <div><dt>Blob size</dt><dd><span data-field="blob_size"></span> bytes <span class="muted">nonce ‖ ciphertext ‖ tag</span></dd></div>
+        <div><dt>Nonce</dt><dd class="mono hex" data-field="nonce_hex"></dd></div>
+        <div><dt>Ciphertext</dt><dd class="mono hex cipher" data-field="ciphertext_head"></dd></div>
+        <div><dt>GCM tag</dt><dd class="mono hex" data-field="tag_hex"></dd></div>
+        <div><dt>Index</dt><dd><span data-field="keyword_count"></span> keyword postings <span class="muted" data-field="blind_fields"></span></dd></div>
+      </dl>
+      <p class="note">{{ icon('eye-off') }}This is the exact ciphertext that will be stored. Plaintext never leaves the portal.</p>
+      <div class="actions">
+        {% if storage.choice == 'local' %}
+          <button type="button" class="btn btn-primary" id="commit-btn" data-provider="local">{{ icon('folder') }}<span>Save to Local Storage</span></button>
+        {% elif storage.drive_connected %}
+          <button type="button" class="btn btn-primary" id="commit-btn" data-provider="drive">{{ icon('cloud') }}<span>Send to Google Drive</span></button>
+        {% else %}
+          <form method="post" action="{{ url_for('drive_connect') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-primary">{{ icon('link') }}<span>Connect Google Drive</span></button>
+          </form>
+          <span class="muted small">Google Drive is selected but not connected. Sign-in starts only when you click.</span>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. Search ------------------------------------------------------------->
+  <section class="card" id="search-card" aria-labelledby="search-title">
+    <header class="card-head">
+      <span class="step" aria-hidden="true">2</span>
+      <div>
+        <h2 id="search-title">Search the vault</h2>
+        <p>Boolean queries over encrypted keywords. Results are decrypted only when you ask.</p>
+      </div>
+    </header>
+
+    <form id="search-form" class="stack" role="search">
+      <div class="search-box">
+        {{ icon('search') }}
+        <input id="q" name="q" type="search" maxlength="512" autocomplete="off" spellcheck="false"
+               placeholder="merger AND (budget OR forecast) NOT draft" aria-label="Search query">
+        <button type="submit" class="btn btn-primary btn-sm">Search</button>
+      </div>
+      <div class="chips" aria-label="Insert operator">
+        {% for token in ['AND', 'OR', 'NOT', '( )'] %}
+          <button type="button" class="chip" data-insert="{{ token }}">{{ token }}</button>
+        {% endfor %}
+        <button type="button" class="chip chip-field" data-insert="department:">department:</button>
+        <button type="button" class="chip chip-field" data-insert="classification:">classification:</button>
+      </div>
+    </form>
+
+    <div id="search-status" class="search-status" hidden></div>
+    <ol id="results" class="results" aria-live="polite"></ol>
+    <div id="search-empty" class="empty">
+      <div class="empty-icon">{{ icon('search') }}</div>
+      <p><strong>Search runs on trapdoors, not words.</strong></p>
+      <p class="muted">Each term becomes <code>HMAC(K_tok, word)</code>; the index is probed with labels derived from it. Operators are evaluated inside the portal.</p>
+    </div>
+  </section>
+</div>
+
+<!-- Vault contents ------------------------------------------------------------>
+<section class="card" id="docs-card" aria-labelledby="docs-title">
+  <header class="card-head card-head-row">
+    <div>
+      <h2 id="docs-title">Vault contents</h2>
+      <p>Filenames and contents are encrypted, so documents are listed by random ID.</p>
+    </div>
+  </header>
+  <div class="table-wrap">
+    <table class="table" id="docs-table">
+      <thead>
+        <tr><th scope="col">Document ID</th><th scope="col" class="hide-sm">Storage</th><th scope="col" class="num">Blob size</th><th scope="col" class="hide-sm">Uploaded</th><th scope="col" class="right">Integrity</th></tr>
+      </thead>
+      <tbody>
+        {% for d in documents %}
+        <tr data-doc="{{ d.doc_id }}">
+          <td><span class="mono id">{{ d.doc_id }}</span></td>
+          <td class="hide-sm"><span class="provider">{{ icon('folder' if d.provider == 'local' else 'cloud') }}{{ 'Local' if d.provider == 'local' else 'Drive' }}</span></td>
+          <td class="num">{{ d.blob_size | filesize }}</td>
+          <td class="hide-sm"><time datetime="{{ d.uploaded_at }}">{{ d.uploaded_at | when }}</time></td>
+          <td class="right"><button type="button" class="btn btn-ghost btn-sm" data-verify="{{ d.doc_id }}">{{ icon('shield') }}<span>Verify</span></button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div id="docs-empty" class="empty" {% if documents %}hidden{% endif %}>
+    <div class="empty-icon">{{ icon('lock') }}</div>
+    <p><strong>No documents yet.</strong></p>
+    <p class="muted">Encrypt your first file above. Sample files live in <code>samples/</code>.</p>
+  </div>
+</section>
+
+<template id="tpl-icons">
+  <span data-icon="folder">{{ icon('folder') }}</span>
+  <span data-icon="cloud">{{ icon('cloud') }}</span>
+  <span data-icon="shield">{{ icon('shield') }}</span>
+  <span data-icon="unlock">{{ icon('unlock') }}</span>
+  <span data-icon="eye-off">{{ icon('eye-off') }}</span>
+  <span data-icon="check">{{ icon('check') }}</span>
+  <span data-icon="x">{{ icon('x') }}</span>
+  <span data-icon="alert">{{ icon('alert') }}</span>
+  <span data-icon="copy">{{ icon('copy') }}</span>
+  <span data-icon="file">{{ icon('file') }}</span>
+</template>
+{% endblock %}
