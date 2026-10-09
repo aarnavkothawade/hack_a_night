@@ -24,6 +24,7 @@ sse-engine/
 ├── static/              styles.css, core.js, dashboard.js, server-view.js, setup.js
 ├── samples/             Example documents for the demo
 ├── tests/               pytest suite (no Google login needed)
+├── run.bat / run.sh     One-click launchers (venv, install, start, open browser)
 ├── requirements.txt
 ├── .env.example
 └── .gitignore
@@ -34,6 +35,12 @@ Runtime files created next to `app.py` (all git-ignored): `master.key`,
 `local_store/`, and optionally `.env`, `credentials.json`, `token.json`.
 
 ## Setup and run
+
+**Quickest:** on Windows double-click `run.bat`; on macOS/Linux run `./run.sh`.
+Either one creates the virtual environment, installs the requirements, starts the
+portal and opens http://localhost:5000.
+
+Manual steps:
 
 ```bash
 cd sse-engine
